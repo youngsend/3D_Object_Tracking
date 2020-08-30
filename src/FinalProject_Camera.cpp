@@ -20,8 +20,6 @@
 #include "lidarData.hpp"
 #include "camFusion.hpp"
 
-using namespace std;
-
 /* MAIN PROGRAM */
 int main(int argc, const char *argv[])
 {
@@ -40,26 +38,26 @@ int main(int argc, const char *argv[])
     Matching2D matching2D(detectorType, descriptorType, matcherType, selectorType);
 
     // data location
-    string dataPath = "../";
+    std::string dataPath = "../";
 
     // camera
-    string imgBasePath = dataPath + "images/";
-    string imgPrefix = "KITTI/2011_09_26/image_02/data/000000"; // left camera, color
-    string imgFileType = ".png";
+    std::string imgBasePath = dataPath + "images/";
+    std::string imgPrefix = "KITTI/2011_09_26/image_02/data/000000"; // left camera, color
+    std::string imgFileType = ".png";
     int imgStartIndex = 0; // first file index to load (assumes Lidar and camera names have identical naming convention)
     int imgEndIndex = 18;   // last file index to load
     int imgStepWidth = 1;
     int imgFillWidth = 4;  // no. of digits which make up the file index (e.g. img-0001.png)
 
     // object detection
-    string yoloBasePath = dataPath + "dat/yolo/";
-    string yoloClassesFile = yoloBasePath + "coco.names";
-    string yoloModelConfiguration = yoloBasePath + "yolov3.cfg";
-    string yoloModelWeights = yoloBasePath + "yolov3.weights";
+    std::string yoloBasePath = dataPath + "dat/yolo/";
+    std::string yoloClassesFile = yoloBasePath + "coco.names";
+    std::string yoloModelConfiguration = yoloBasePath + "yolov3.cfg";
+    std::string yoloModelWeights = yoloBasePath + "yolov3.weights";
 
     // Lidar
-    string lidarPrefix = "KITTI/2011_09_26/velodyne_points/data/000000";
-    string lidarFileType = ".bin";
+    std::string lidarPrefix = "KITTI/2011_09_26/velodyne_points/data/000000";
+    std::string lidarFileType = ".bin";
 
     // calibration data for camera and lidar
     cv::Mat P_rect_00(3,4,cv::DataType<double>::type); // 3x4 projection matrix after rectification
@@ -95,19 +93,18 @@ int main(int argc, const char *argv[])
     // misc
     double sensorFrameRate = 10.0 / imgStepWidth; // frames per second for Lidar and camera
     int dataBufferSize = 2;       // no. of images which are held in memory (ring buffer) at the same time
-    vector<DataFrame> dataBuffer; // list of data frames which are held in memory at the same time
+    std::vector<DataFrame> dataBuffer; // list of data frames which are held in memory at the same time
     bool bVis = false;            // visualize results
 
     /* MAIN LOOP OVER ALL IMAGES */
 
-    for (size_t imgIndex = 0; imgIndex <= imgEndIndex - imgStartIndex; imgIndex+=imgStepWidth)
-    {
+    for (size_t imgIndex = 0; imgIndex <= imgEndIndex - imgStartIndex; imgIndex+=imgStepWidth) {
         /* LOAD IMAGE INTO BUFFER */
 
         // assemble filenames for current index
-        ostringstream imgNumber;
-        imgNumber << setfill('0') << setw(imgFillWidth) << imgStartIndex + imgIndex;
-        string imgFullFilename = imgBasePath + imgPrefix + imgNumber.str() + imgFileType;
+        std::ostringstream imgNumber;
+        imgNumber << std::setfill('0') << std::setw(imgFillWidth) << imgStartIndex + imgIndex;
+        std::string imgFullFilename = imgBasePath + imgPrefix + imgNumber.str() + imgFileType;
 
         // load image from file 
         cv::Mat img = cv::imread(imgFullFilename);
@@ -124,7 +121,7 @@ int main(int argc, const char *argv[])
             dataBuffer[current_index] = frame;
         }
 
-        cout << "#1 : LOAD IMAGE INTO BUFFER done" << endl;
+        std::cout << "#1 : LOAD IMAGE INTO BUFFER done\n";
 
         /* DETECT & CLASSIFY OBJECTS */
 
@@ -134,13 +131,12 @@ int main(int argc, const char *argv[])
                       confThreshold, nmsThreshold,
                       yoloBasePath, yoloClassesFile, yoloModelConfiguration, yoloModelWeights, bVis);
 
-        cout << "#2 : DETECT & CLASSIFY OBJECTS done" << endl;
-
+        std::cout << "#2 : DETECT & CLASSIFY OBJECTS done\n";
 
         /* CROP LIDAR POINTS */
 
         // load 3D Lidar points from file
-        string lidarFullFilename = imgBasePath + lidarPrefix + imgNumber.str() + lidarFileType;
+        std::string lidarFullFilename = imgBasePath + lidarPrefix + imgNumber.str() + lidarFileType;
         std::vector<LidarPoint> lidarPoints;
         loadLidarFromFile(lidarPoints, lidarFullFilename);
 
@@ -150,7 +146,7 @@ int main(int argc, const char *argv[])
 
         dataBuffer[current_index].lidarPoints = lidarPoints;
 
-        cout << "#3 : CROP LIDAR POINTS done" << endl;
+        std::cout << "#3 : CROP LIDAR POINTS done\n";
 
         /* CLUSTER LIDAR POINT CLOUD */
 
@@ -170,7 +166,7 @@ int main(int argc, const char *argv[])
         }
         bVis = false;
 
-        cout << "#4 : CLUSTER LIDAR POINT CLOUD done" << endl;
+        std::cout << "#4 : CLUSTER LIDAR POINT CLOUD done\n";
 
         /* DETECT IMAGE KEYPOINTS */
 
@@ -201,7 +197,7 @@ int main(int argc, const char *argv[])
                 keypoints.erase(keypoints.begin() + maxKeypoints, keypoints.end());
             }
             cv::KeyPointsFilter::retainBest(keypoints, maxKeypoints);
-            cout << " NOTE: Keypoints have been limited!" << endl;
+            std::cout << " NOTE: Keypoints have been limited!\n";
         }
 
         // push keypoints and descriptor for current frame to end of data buffer
@@ -215,15 +211,14 @@ int main(int argc, const char *argv[])
         // push descriptors for current frame to end of data buffer
         dataBuffer[current_index].descriptors = descriptors;
 
-        cout << "#6 : EXTRACT DESCRIPTORS done" << endl;
-
+        std::cout << "#6 : EXTRACT DESCRIPTORS done\n";
 
         if (dataBuffer.size() > 1) // wait until at least two images have been processed
         {
             uint last_index = (imgIndex - 1) % dataBufferSize;
             /* MATCH KEYPOINT DESCRIPTORS */
 
-            vector<cv::DMatch> matches;
+            std::vector<cv::DMatch> matches;
 
             matching2D.MatchDescriptors(dataBuffer[last_index].keypoints, dataBuffer[current_index].keypoints,
                                         dataBuffer[last_index].descriptors,
@@ -233,14 +228,13 @@ int main(int argc, const char *argv[])
             // store matches in current data frame
             dataBuffer[current_index].kptMatches = matches;
 
-            cout << "#7 : MATCH KEYPOINT DESCRIPTORS done" << endl;
-
+            std::cout << "#7 : MATCH KEYPOINT DESCRIPTORS done\n";
 
             /* TRACK 3D OBJECT BOUNDING BOXES */
 
             //// STUDENT ASSIGNMENT
             //// TASK FP.1 -> match list of 3D objects (vector<BoundingBox>) between current and previous frame (implement ->matchBoundingBoxes)
-            map<int, int> bbBestMatches;
+            std::map<int, int> bbBestMatches;
             matchBoundingBoxes(matches, bbBestMatches, dataBuffer[last_index],
                                dataBuffer[current_index]); // associate bounding boxes between current and previous frame using keypoint matches
             //// EOF STUDENT ASSIGNMENT
@@ -248,38 +242,30 @@ int main(int argc, const char *argv[])
             // store matches in current data frame
             dataBuffer[current_index].bbMatches = bbBestMatches;
 
-            cout << "#8 : TRACK 3D OBJECT BOUNDING BOXES done" << endl;
-
+            std::cout << "#8 : TRACK 3D OBJECT BOUNDING BOXES done\n";
 
             /* COMPUTE TTC ON OBJECT IN FRONT */
 
             // loop over all BB match pairs
-            for (auto it1 = dataBuffer[current_index].bbMatches.begin();
-                 it1 != dataBuffer[current_index].bbMatches.end(); ++it1)
-            {
+            for (auto& bbMatch : dataBuffer[current_index].bbMatches){
                 // find bounding boxes associates with current match
                 BoundingBox *prevBB, *currBB;
-                for (auto it2 = dataBuffer[current_index].boundingBoxes.begin();
-                     it2 != dataBuffer[current_index].boundingBoxes.end(); ++it2)
-                {
-                    if (it1->second == it2->boxID) // check wether current match partner corresponds to this BB
+                for (auto& boundingBox : dataBuffer[current_index].boundingBoxes) {
+                    if (bbMatch.second == boundingBox.boxID) // check wether current match partner corresponds to this BB
                     {
-                        currBB = &(*it2);
+                        currBB = &(boundingBox);
                     }
                 }
 
-                for (auto it2 = dataBuffer[last_index].boundingBoxes.begin();
-                     it2 != dataBuffer[last_index].boundingBoxes.end(); ++it2)
-                {
-                    if (it1->first == it2->boxID) // check wether current match partner corresponds to this BB
+                for (auto& boundingBox : dataBuffer[last_index].boundingBoxes){
+                    if (bbMatch.first == boundingBox.boxID) // check wether current match partner corresponds to this BB
                     {
-                        prevBB = &(*it2);
+                        prevBB = &(boundingBox);
                     }
                 }
 
                 // compute TTC for current match
-                if( currBB->lidarPoints.size()>0 && prevBB->lidarPoints.size()>0 ) // only compute TTC if we have Lidar points
-                {
+                if(!(currBB->lidarPoints.empty()) && !(prevBB->lidarPoints.empty())){
                     //// STUDENT ASSIGNMENT
                     //// TASK FP.2 -> compute time-to-collision based on Lidar data (implement -> computeTTCLidar)
                     double ttcLidar;
@@ -313,10 +299,10 @@ int main(int argc, const char *argv[])
                         putText(visImg, str, cv::Point2f(80, 50), cv::FONT_HERSHEY_PLAIN,
                                 2, cv::Scalar(0,0,255));
 
-                        string windowName = "Final Results : TTC";
+                        std::string windowName = "Final Results : TTC";
                         cv::namedWindow(windowName, 4);
                         cv::imshow(windowName, visImg);
-                        cout << "Press key to continue to next frame" << endl;
+                        std::cout << "Press key to continue to next frame\n";
                         cv::waitKey(0);
                     }
                     bVis = false;

@@ -86,12 +86,11 @@ void detectObjects(cv::Mat& img, std::vector<BoundingBox>& bBoxes, float confThr
     // perform non-maxima suppression
     vector<int> indices;
     cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, indices);
-    for(auto it=indices.begin(); it!=indices.end(); ++it) {
-
+    for(auto index : indices) {
         BoundingBox bBox;
-        bBox.roi = boxes[*it];
-        bBox.classID = classIds[*it];
-        bBox.confidence = confidences[*it];
+        bBox.roi = boxes[index];
+        bBox.classID = classIds[index];
+        bBox.confidence = confidences[index];
         bBox.boxID = (int)bBoxes.size(); // zero-based unique identifier for this bounding box
 
         bBoxes.push_back(bBox);
@@ -101,19 +100,18 @@ void detectObjects(cv::Mat& img, std::vector<BoundingBox>& bBoxes, float confThr
     if(bVis) {
 
         cv::Mat visImg = img.clone();
-        for(auto it=bBoxes.begin(); it!=bBoxes.end(); ++it) {
-
+        for(auto& bBox : bBoxes) {
             // Draw rectangle displaying the bounding box
             int top, left, width, height;
-            top = (*it).roi.y;
-            left = (*it).roi.x;
-            width = (*it).roi.width;
-            height = (*it).roi.height;
+            top = bBox.roi.y;
+            left = bBox.roi.x;
+            width = bBox.roi.width;
+            height = bBox.roi.height;
             cv::rectangle(visImg, cv::Point(left, top), cv::Point(left+width, top+height),
                           cv::Scalar(0, 255, 0), 2);
 
-            string label = cv::format("%.2f", (*it).confidence);
-            label = classes[((*it).classID)] + ":" + label;
+            string label = cv::format("%.2f", bBox.confidence);
+            label = classes[bBox.classID] + ":" + label;
 
             // Display label at the top of the bounding box
             int baseLine;
