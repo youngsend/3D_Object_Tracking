@@ -25,7 +25,7 @@ public:
                         std::string descriptorType = "ORB",
                         std::string matcherType = "MAT_BF",
                         std::string selectorType = "SEL_KNN");
-    ~Matching2D();
+    ~Matching2D() = default;
 
     // keypoint detector
     void DetectKeypoints(std::vector<cv::KeyPoint> &keypoints, cv::Mat &img);
@@ -41,16 +41,12 @@ public:
     void DisplayMatches(const DataFrame& current, const DataFrame& last, const std::vector<cv::DMatch>& matches);
     void CropKeypoints(const cv::Rect& rect, std::vector<cv::KeyPoint>& keypoints);
 
-    // calculate mean and std for keypoints' neighborhood size
-    void CalculateNeighborhoodDistribution(const std::vector<cv::KeyPoint> &keypoints);
-
 private:
     void DetKeypointsHarris(std::vector<cv::KeyPoint> &keypoints, cv::Mat &img);
     void DetKeypointsShiTomasi(std::vector<cv::KeyPoint> &keypoints, cv::Mat &img);
     void DetKeypointsModern(std::vector<cv::KeyPoint> &keypoints, cv::Mat &img);
 
 private:
-    std::ofstream outputCSV;
     std::string detectorType;
     std::string descriptorType;
     std::string matcherType;

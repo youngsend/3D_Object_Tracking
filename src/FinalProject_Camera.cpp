@@ -172,9 +172,6 @@ int main(int argc, const char *argv[])
 
         cout << "#4 : CLUSTER LIDAR POINT CLOUD done" << endl;
 
-
-        // REMOVE THIS LINE BEFORE PROCEEDING WITH THE FINAL PROJECT
-
         /* DETECT IMAGE KEYPOINTS */
 
         // convert current image to grayscale
