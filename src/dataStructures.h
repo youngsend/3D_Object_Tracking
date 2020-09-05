@@ -8,6 +8,7 @@
 
 struct LidarPoint { // single lidar point in space
     double x,y,z,r; // x,y,z in [m], r is point reflectivity
+    LidarPoint():x(0.0),y(0.0),z(0.0),r(0.0){}
 };
 
 struct BoundingBox { // bounding box around a classified object (contains both 2D and 3D data)
@@ -26,9 +27,9 @@ struct BoundingBox { // bounding box around a classified object (contains both 2
 
 struct DataFrame { // represents the available sensor information at the same time instance
 
-    cv::Mat cameraImg; // camera image
+    cv::Mat cameraImg; // fusion image
 
-    std::vector<cv::KeyPoint> keypoints; // 2D keypoints within camera image
+    std::vector<cv::KeyPoint> keypoints; // 2D keypoints within fusion image
     cv::Mat descriptors; // keypoint descriptors
     std::vector<cv::DMatch> kptMatches; // keypoint matches between previous and current frame
     std::vector<LidarPoint> lidarPoints;

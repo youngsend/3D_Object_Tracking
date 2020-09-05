@@ -22,7 +22,7 @@ Matching2D::Matching2D(std::string detectorType, std::string descriptorType, std
     }
 }
 
-// Find best matches for keypoints in two camera images based on several matching methods
+// Find best matches for keypoints in two fusion images based on several matching methods
 void Matching2D::MatchDescriptors(std::vector<cv::KeyPoint> &kPtsSource, std::vector<cv::KeyPoint> &kPtsRef,
                                   cv::Mat &descSource, cv::Mat &descRef,
                                   std::vector<cv::DMatch> &matches) {
@@ -265,7 +265,7 @@ Matching2D::DisplayMatches(const DataFrame &current, const DataFrame &last, cons
                     cv::Scalar::all(-1), cv::Scalar::all(-1),
                     std::vector<char>(), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
 
-    std::string windowName = "Matching keypoints between two camera images";
+    std::string windowName = "Matching keypoints between two fusion images";
     cv::namedWindow(windowName, 7);
     cv::imshow(windowName, matchImg);
     cv::waitKey(0); // wait for key to be pressed

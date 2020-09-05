@@ -1,12 +1,8 @@
-
 #include <iostream>
 #include <algorithm>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include "lidarData.hpp"
-
-
-using namespace std;
 
 // remove Lidar points based on min. and max distance in X, Y and Z
 void cropLidarPoints(std::vector<LidarPoint> &lidarPoints, float minX, float maxX, float maxY, float minZ,
@@ -25,7 +21,7 @@ void cropLidarPoints(std::vector<LidarPoint> &lidarPoints, float minX, float max
 }
 
 // Load Lidar points from a given location and store them in a vector
-void loadLidarFromFile(vector<LidarPoint> &lidarPoints, string filename){
+void loadLidarFromFile(std::vector<LidarPoint> &lidarPoints, std::string filename){
     // allocate 4 MB buffer (only ~130*4*4 KB are needed)
     unsigned long num = 1000000;
     auto *data = (float*)malloc(num*sizeof(float));
@@ -77,7 +73,7 @@ void showLidarTopview(std::vector<LidarPoint> &lidarPoints, cv::Size worldSize,
     }
 
     // display image
-    string windowName = "Top-View Perspective of LiDAR data";
+    std::string windowName = "Top-View Perspective of LiDAR data";
     cv::namedWindow(windowName, 2);
     cv::imshow(windowName, topviewImg);
     if(bWait)
@@ -86,58 +82,40 @@ void showLidarTopview(std::vector<LidarPoint> &lidarPoints, cv::Size worldSize,
     }
 }
 
-void showLidarImgOverlay(cv::Mat &img, std::vector<LidarPoint> &lidarPoints, cv::Mat &P_rect_xx,
-                         cv::Mat &R_rect_xx, cv::Mat &RT, cv::Mat *extVisImg){
-    // init image for visualization
-    cv::Mat visImg;
-    if(extVisImg==nullptr)
-    {
-        visImg = img.clone();
-    } else
-    {
-        visImg = *extVisImg;
+void Proximity(std::unordered_set<int> &processed_ids,
+               const std::vector<LidarPoint>& cloud,
+               std::vector<int> &cluster_ids,
+               int index, KdTree *tree, float distanceTol) {
+    processed_ids.insert(index);
+    cluster_ids.push_back(index);
+    auto nearby_points = tree->search(cloud[index], distanceTol);
+    for (int nearby_index : nearby_points) {
+        if (!processed_ids.count(nearby_index)) {
+            Proximity(processed_ids, cloud, cluster_ids, nearby_index, tree, distanceTol);
+        }
+    }
+}
+
+std::vector<int> GetLargestEuclideanCluster(const std::vector<LidarPoint>& cloud,
+                                            float distanceTol){
+    // Build kd-tree
+    KdTree* tree = new KdTree();
+    for(int i=0; i<cloud.size(); i++){
+        tree->insert(cloud[i], i);
     }
 
-    cv::Mat overlay = visImg.clone();
-
-    // find max. x-value
-    double maxVal = 0.0;
-    for(auto& lidarPoint : lidarPoints){
-        maxVal = maxVal < lidarPoint.x ? lidarPoint.x : maxVal;
+    // Fill out this function to return list of indices for each cluster
+    std::vector<int> largest_cluster;
+    std::unordered_set<int> processed_ids;
+    for (int index=0; index<cloud.size(); index++){
+        if(!processed_ids.count(index)) {
+            std::vector<int> cluster_ids;
+            Proximity(processed_ids, cloud, cluster_ids, index, tree, distanceTol);
+            if(cluster_ids.size() > largest_cluster.size()) {
+                largest_cluster = cluster_ids;
+            }
+        }
     }
-
-    cv::Mat X(4,1,cv::DataType<double>::type);
-    cv::Mat Y(3,1,cv::DataType<double>::type);
-    for(auto& lidarPoint : lidarPoints) {
-        X.at<double>(0, 0) = lidarPoint.x;
-        X.at<double>(1, 0) = lidarPoint.y;
-        X.at<double>(2, 0) = lidarPoint.z;
-        X.at<double>(3, 0) = 1;
-
-        Y = P_rect_xx * R_rect_xx * RT * X;
-        cv::Point pt;
-        pt.x = Y.at<double>(0, 0) / Y.at<double>(0, 2);
-        pt.y = Y.at<double>(1, 0) / Y.at<double>(0, 2);
-
-        float val = lidarPoint.x;
-        int red = min(255, (int)(255 * abs((val - maxVal) / maxVal)));
-        int green = min(255, (int)(255 * (1 - abs((val - maxVal) / maxVal))));
-        cv::circle(overlay, pt, 5, cv::Scalar(0, green, red), -1);
-    }
-
-    float opacity = 0.6;
-    cv::addWeighted(overlay, opacity, visImg, 1 - opacity, 0, visImg);
-
-    // return augmented image or wait if no image has been provided
-    if (extVisImg == nullptr)
-    {
-        string windowName = "LiDAR data on image overlay";
-        cv::namedWindow( windowName, 3 );
-        cv::imshow( windowName, visImg );
-        cv::waitKey(0); // wait for key to be pressed
-    }
-    else
-    {
-        extVisImg = &visImg;
-    }
+    std::cout << "largest cluster size: " << largest_cluster.size() << "\n";
+    return largest_cluster;
 }
