@@ -8,12 +8,12 @@
 
 #include "camFusion.hpp"
 
-CamFusion::CamFusion(cv::Mat P_rect_xx, cv::Mat R_rect_xx, cv::Mat RT) :
-        P_rect_xx(std::move(P_rect_xx)), R_rect_xx(std::move(R_rect_xx)), RT(std::move(RT)){}
+CamFusion::CamFusion(cv::Mat P_rect_xx, cv::Mat R_rect_xx, cv::Mat RT, float shrinkFactor) :
+        P_rect_xx(std::move(P_rect_xx)), R_rect_xx(std::move(R_rect_xx)),
+        RT(std::move(RT)), shrinkFactor(shrinkFactor){}
 
-// Create groups of Lidar points whose projection into the fusion falls into the same bounding box
-void CamFusion::ClusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<LidarPoint> &lidarPoints,
-                                    float shrinkFactor){
+// Create groups of Lidar points whose projection into the camera falls into the same bounding box
+void CamFusion::ClusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<LidarPoint> &lidarPoints){
     // loop over all Lidar points and associate them to a 2D bounding box
     cv::Mat X(4, 1, cv::DataType<double>::type);
     cv::Mat Y(3, 1, cv::DataType<double>::type);
@@ -25,7 +25,7 @@ void CamFusion::ClusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std
         X.at<double>(2, 0) = lidarPoint.z;
         X.at<double>(3, 0) = 1;
 
-        // project Lidar point into fusion
+        // project Lidar point into camera
         Y = P_rect_xx * R_rect_xx * RT * X;
         cv::Point pt;
         pt.x = Y.at<double>(0, 0) / Y.at<double>(0, 2); // pixel coordinates
@@ -125,18 +125,44 @@ void CamFusion::Display3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Si
     cv::waitKey(0); // wait for key to be pressed
 }
 
-
-// associate a given bounding box with the keypoints it contains
-void CamFusion::ClusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev,
-                                         std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches){
-    // ...
-}
-
-
 // Compute time-to-collision (TTC) based on keypoint correspondences in successive images
 double CamFusion::ComputeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr,
-                                   std::vector<cv::DMatch> kptMatches, double frameRate, cv::Mat *visImg){
-    double TTC = 0.0;
+                                   std::vector<cv::DMatch>& kptMatches, double frameRate, cv::Mat *visImg){
+    // calculate all distance (in same frame) ratios for all matched keypoints.
+    double distanceThreshold = 30.0;
+    std::vector<float> distanceRatios;
+    for(uint32_t i=0; i<kptMatches.size(); i++){
+        auto& prevKptI = kptsPrev[kptMatches[i].trainIdx];
+        auto& currKptI = kptsCurr[kptMatches[i].queryIdx];
+
+        for(uint32_t j=i+1; j<kptMatches.size(); j++){
+            auto& prevKptJ = kptsPrev[kptMatches[j].trainIdx];
+            auto& currKptJ = kptsCurr[kptMatches[j].queryIdx];
+
+            auto prevDistance = cv::norm(prevKptI.pt - prevKptJ.pt);
+            auto currDistance = cv::norm(currKptI.pt - currKptJ.pt);
+
+            if(prevDistance >= std::numeric_limits<double>::epsilon() && currDistance >= distanceThreshold) {
+                distanceRatios.push_back(currDistance / prevDistance);
+            }
+        }
+    }
+
+    if (distanceRatios.empty()) {
+        return NAN;
+    }
+    std::cout << "distance ratios vector size: " << distanceRatios.size() << "\n";
+
+    std::sort(distanceRatios.begin(), distanceRatios.end());
+    unsigned long medIndex = distanceRatios.size() / 2;
+    auto distanceRatioMedian = distanceRatios.size() % 2 == 0 ?
+                               (distanceRatios[medIndex-1] + distanceRatios[medIndex]) / 2.0 :
+                               distanceRatios[medIndex];
+
+
+    std::cout << "distance ratio: " << distanceRatioMedian << "\n";
+
+    double TTC = std::fabs(-1 / (1 - distanceRatioMedian) / frameRate);
 
     return TTC;
 }
@@ -152,12 +178,13 @@ double CamFusion::ComputeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
     auto d1 = GetClosestLidarPoint(lidarPointsCurr, currCluster).x;
 
     double TTC = std::fabs(d1 / (d0-d1) / frameRate);
-    std::cout << "d0: " << d0 << " ,d1: " << d1 << std::endl;
+//    std::cout << "d0: " << d0 << " ,d1: " << d1 << std::endl;
 
     return TTC;
 }
 
-
+// Find matched bounding boxes and fill in kptMatches in matched bounding boxes in current frame.
+// Similar to ClusterLidarWithROI, I also shrink ROI here.
 void CamFusion::MatchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches,
                                    DataFrame &prevFrame, DataFrame &currFrame) {
     // map<pair<prev frame box id, current frame box id>, DMatch number>
@@ -168,10 +195,13 @@ void CamFusion::MatchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<in
         auto& prevKeypoint = prevFrame.keypoints[match.trainIdx];
         auto& currKeypoint = currFrame.keypoints[match.queryIdx];
         for(auto& preBoundingBox : prevFrame.boundingBoxes){
+            if (!preBoundingBox.roi.contains(prevKeypoint.pt)) {
+                continue;
+            }
             for(auto& currBoundingBox : currFrame.boundingBoxes) {
                 // Use this loop because several bounding boxes may overlap, so they may contain the same keypoint.
-                if (preBoundingBox.roi.contains(prevKeypoint.pt) &&
-                    currBoundingBox.roi.contains(currKeypoint.pt)){
+                // Use smaller ROI to focus on object.
+                if (currBoundingBox.roi.contains(currKeypoint.pt)){
                     // value of map is initialized to 0.
                     boundingBoxMatchCounts[std::make_pair(preBoundingBox.boxID,
                                                           currBoundingBox.boxID)]++;
@@ -192,9 +222,6 @@ void CamFusion::MatchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<in
     // Take the box match with the largest count number. In bbBestMatches, box id should not duplicate.
     std::set<int> prevBoxIdUsed, currBoxIdUsed;
     for(auto& element : boundingBoxMatchCountVector){
-        // when match count is less than or equals 1, do not consider this bounding box match.
-        if(element.count <= 1)
-            break;
         if(prevBoxIdUsed.insert(element.prevBoxId).second &&
            currBoxIdUsed.insert(element.currBoxId).second){
             // both box ids have not been matched.
@@ -206,9 +233,10 @@ void CamFusion::MatchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<in
 void CamFusion::DisplayTTC(const cv::Mat &cameraImg, BoundingBox *currBB, double ttcLidar, double ttcCamera) {
     cv::Mat visImg = cameraImg.clone();
     DisplayLidarImgOverlay(visImg, currBB->lidarPoints, &visImg);
-    cv::rectangle(visImg, cv::Point(currBB->roi.x, currBB->roi.y),
-                  cv::Point(currBB->roi.x + currBB->roi.width,
-                            currBB->roi.y + currBB->roi.height),
+    auto smallerROI = SmallerROI(currBB->roi);
+    cv::rectangle(visImg, cv::Point(smallerROI.x, smallerROI.y),
+                  cv::Point(smallerROI.x + smallerROI.width,
+                            smallerROI.y + smallerROI.height),
                   cv::Scalar(0, 255, 0), 2);
 
     char str[200];
@@ -287,4 +315,54 @@ LidarPoint CamFusion::GetClosestLidarPoint(const std::vector<LidarPoint> &lidarP
         }
     }
     return lidarPoint;
+}
+
+cv::Rect CamFusion::SmallerROI(const cv::Rect &roi) {
+    // shrink current bounding box slightly to avoid having too many outlier points around the edges
+    cv::Rect smallerBox;
+    smallerBox.x = roi.x + shrinkFactor * roi.width / 2.0;
+    smallerBox.y = roi.y + shrinkFactor * roi.height / 2.0;
+    smallerBox.width = roi.width * (1 - shrinkFactor);
+    smallerBox.height = roi.height * (1 - shrinkFactor);
+    return smallerBox;
+}
+
+// I want to use RANSAC to remove outliers.
+void CamFusion::RemoveMatchOutliersRansac(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr,
+                                          std::vector<cv::DMatch> &kptMatches) {
+    std::cout << "match size (before): " << kptMatches.size() << "\n";
+    std::vector<double> dists;
+    double sumDistance = 0.0;
+    for(auto& match : kptMatches){
+        auto distance = cv::norm(kptsPrev[match.trainIdx].pt - kptsCurr[match.queryIdx].pt);
+        dists.push_back(distance);
+        sumDistance += distance;
+    }
+
+    auto meanDistance = sumDistance / kptMatches.size();
+    std::vector<cv::DMatch> kptMatchesOutliersRemoved;
+    auto maxDistance = 1.3 * meanDistance;
+    for(uint32_t i=0; i<kptMatches.size(); i++){
+        if (dists[i] <= maxDistance) {
+            kptMatchesOutliersRemoved.push_back(kptMatches[i]);
+        }
+    }
+
+    std::cout << "match size (after): " << kptMatchesOutliersRemoved.size() << "\n";
+    kptMatches = kptMatchesOutliersRemoved;
+}
+
+// kptsPrev is used to remove outliers.
+void CamFusion::ClusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev,
+                                         std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches) {
+    // associate matches to bounding box if its keypoint is within the ROI.
+    // This means here the bounding box's matches may be more than those found in MatchBoundingBoxes.
+    for(auto& match : kptMatches){
+        if(boundingBox.roi.contains(kptsCurr[match.queryIdx].pt)){
+            boundingBox.kptMatches.push_back(match);
+        }
+    }
+
+    // account for match outliers.
+    RemoveMatchOutliersRansac(kptsPrev, kptsCurr, boundingBox.kptMatches);
 }

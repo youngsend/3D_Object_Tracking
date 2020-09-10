@@ -38,11 +38,11 @@ int main(int argc, const char *argv[]){
     // data location
     std::string dataPath = "../";
 
-    // fusion
+    // camera
     std::string imgBasePath = dataPath + "images/";
-    std::string imgPrefix = "KITTI/2011_09_26/image_02/data/000000"; // left fusion, color
+    std::string imgPrefix = "KITTI/2011_09_26/image_02/data/000000"; // left camera, color
     std::string imgFileType = ".png";
-    int imgStartIndex = 0; // first file index to load (assumes Lidar and fusion names have identical naming convention)
+    int imgStartIndex = 0; // first file index to load (assumes Lidar and camera names have identical naming convention)
     int imgEndIndex = 18;   // last file index to load
     int imgStepWidth = 1;
     int imgFillWidth = 4;  // no. of digits which make up the file index (e.g. img-0001.png)
@@ -57,7 +57,7 @@ int main(int argc, const char *argv[]){
     std::string lidarPrefix = "KITTI/2011_09_26/velodyne_points/data/000000";
     std::string lidarFileType = ".bin";
 
-    // calibration data for fusion and lidar
+    // calibration data for camera and lidar
     cv::Mat P_rect_00(3,4,cv::DataType<double>::type); // 3x4 projection matrix after rectification
     // 3x3 rectifying rotation to make image planes co-planar
     cv::Mat R_rect_00(4,4,cv::DataType<double>::type);
@@ -88,11 +88,12 @@ int main(int argc, const char *argv[]){
     P_rect_00.at<double>(2,0) = 0.000000e+00; P_rect_00.at<double>(2,1) = 0.000000e+00;
     P_rect_00.at<double>(2,2) = 1.000000e+00; P_rect_00.at<double>(2,3) = 0.000000e+00;
 
+    float shrinkFactor = 0.10;
     // create CamFusion object using calibration data
-    CamFusion camFusion(P_rect_00, R_rect_00, RT);
+    CamFusion camFusion(P_rect_00, R_rect_00, RT, shrinkFactor);
 
     // misc
-    double sensorFrameRate = 10.0 / imgStepWidth; // frames per second for Lidar and fusion
+    double sensorFrameRate = 10.0 / imgStepWidth; // frames per second for Lidar and camera
     int dataBufferSize = 2;       // no. of images which are held in memory (ring buffer) at the same time
     std::vector<DataFrame> dataBuffer; // list of data frames which are held in memory at the same time
     bool bVis = false;            // visualize results
@@ -144,17 +145,15 @@ int main(int argc, const char *argv[]){
 
         /* CLUSTER LIDAR POINT CLOUD */
 
-        // associate Lidar points with fusion-based ROI
+        // associate Lidar points with camera-based ROI
         // shrinks each bounding box by the given percentage to avoid 3D object merging at the edges of an ROI
-        float shrinkFactor = 0.10;
         camFusion.ClusterLidarWithROI(dataBuffer[current_index].boundingBoxes,
-                                      dataBuffer[current_index].lidarPoints,
-                                      shrinkFactor);
+                                      dataBuffer[current_index].lidarPoints);
 
         // Visualize 3D objects
-        camFusion.Display3DObjects(dataBuffer[current_index].boundingBoxes,
-                                   cv::Size(4.0, 20.0),
-                                   cv::Size(2000, 2000));
+//        camFusion.Display3DObjects(dataBuffer[current_index].boundingBoxes,
+//                                   cv::Size(4.0, 20.0),
+//                                   cv::Size(2000, 2000));
 
         /* DETECT IMAGE KEYPOINTS */
 
@@ -188,7 +187,6 @@ int main(int argc, const char *argv[]){
             /* MATCH KEYPOINT DESCRIPTORS */
 
             std::vector<cv::DMatch> matches;
-
             matching2D.MatchDescriptors(dataBuffer[last_index].keypoints, dataBuffer[current_index].keypoints,
                                         dataBuffer[last_index].descriptors,
                                         dataBuffer[current_index].descriptors,
@@ -196,17 +194,14 @@ int main(int argc, const char *argv[]){
 
             // store matches in current data frame
             dataBuffer[current_index].kptMatches = matches;
-//            matching2D.DisplayMatches(dataBuffer[current_index], dataBuffer[last_index], matches);
 
             /* TRACK 3D OBJECT BOUNDING BOXES */
 
             //// TASK FP.1 -> match list of 3D objects (vector<BoundingBox>) between current and previous frame
-            /// (implement ->MatchBoundingBoxes)
             std::map<int, int> bbBestMatches;
             // associate bounding boxes between current and previous frame using keypoint matches
             camFusion.MatchBoundingBoxes(matches, bbBestMatches, dataBuffer[last_index],
                                          dataBuffer[current_index]);
-
             // store matches in current data frame
             dataBuffer[current_index].bbMatches = bbBestMatches;
 
@@ -242,6 +237,8 @@ int main(int argc, const char *argv[]){
                     camFusion.ClusterKptMatchesWithROI(*currBB, dataBuffer[last_index].keypoints,
                                                        dataBuffer[current_index].keypoints,
                                                        dataBuffer[current_index].kptMatches);
+//                    matching2D.DisplayMatches(dataBuffer[current_index], dataBuffer[last_index],
+//                                              currBB->kptMatches);
                     double ttcCamera = camFusion.ComputeTTCCamera(dataBuffer[last_index].keypoints,
                                                                   dataBuffer[current_index].keypoints,
                                                                   currBB->kptMatches, sensorFrameRate);

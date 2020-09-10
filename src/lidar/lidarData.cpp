@@ -116,6 +116,6 @@ std::vector<int> GetLargestEuclideanCluster(const std::vector<LidarPoint>& cloud
             }
         }
     }
-    std::cout << "largest cluster size: " << largest_cluster.size() << "\n";
+//    std::cout << "largest cluster size: " << largest_cluster.size() << "\n";
     return largest_cluster;
 }

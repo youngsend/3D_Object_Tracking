@@ -265,7 +265,7 @@ Matching2D::DisplayMatches(const DataFrame &current, const DataFrame &last, cons
                     cv::Scalar::all(-1), cv::Scalar::all(-1),
                     std::vector<char>(), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
 
-    std::string windowName = "Matching keypoints between two fusion images";
+    std::string windowName = "Matching keypoints between two camera images";
     cv::namedWindow(windowName, 7);
     cv::imshow(windowName, matchImg);
     cv::waitKey(0); // wait for key to be pressed

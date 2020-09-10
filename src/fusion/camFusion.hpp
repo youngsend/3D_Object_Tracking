@@ -18,10 +18,9 @@ struct BoundingBoxMatchCount {
 
 class CamFusion {
 public:
-    explicit CamFusion(cv::Mat P_rect_xx, cv::Mat R_rect_xx, cv::Mat RT);
+    explicit CamFusion(cv::Mat P_rect_xx, cv::Mat R_rect_xx, cv::Mat RT, float shrinkFactor);
     // fusion
-    void ClusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<LidarPoint> &lidarPoints,
-                             float shrinkFactor);
+    void ClusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<LidarPoint> &lidarPoints);
     void ClusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev,
                                   std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches);
     void MatchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches,
@@ -34,17 +33,21 @@ public:
 
     // compute TTC
     double ComputeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr,
-                            std::vector<cv::DMatch> kptMatches, double frameRate, cv::Mat *visImg = nullptr);
+                            std::vector<cv::DMatch>& kptMatches, double frameRate, cv::Mat *visImg = nullptr);
     double ComputeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
                            std::vector<LidarPoint> &lidarPointsCurr, double frameRate);
 
     // helper
     LidarPoint GetClosestLidarPoint(const std::vector<LidarPoint>& lidarPoints,
                                     const std::vector<int>& cluster);
+    cv::Rect SmallerROI(const cv::Rect& roi);
+    void RemoveMatchOutliersRansac(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr,
+                                   std::vector<cv::DMatch>& kptMatches);
 
 private:
     cv::Mat P_rect_xx;
     cv::Mat R_rect_xx;
     cv::Mat RT;
+    float shrinkFactor;
 };
 #endif /* camFusion_hpp */
