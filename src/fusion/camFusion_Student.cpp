@@ -129,20 +129,20 @@ void CamFusion::Display3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Si
 double CamFusion::ComputeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr,
                                    std::vector<cv::DMatch>& kptMatches, double frameRate, cv::Mat *visImg){
     // calculate all distance (in same frame) ratios for all matched keypoints.
-    double distanceThreshold = 30.0;
+    double distanceThreshold = 50.0;
     std::vector<float> distanceRatios;
     for(uint32_t i=0; i<kptMatches.size(); i++){
-        auto& prevKptI = kptsPrev[kptMatches[i].trainIdx];
-        auto& currKptI = kptsCurr[kptMatches[i].queryIdx];
+        auto& prevKptI = kptsPrev[kptMatches[i].queryIdx];
+        auto& currKptI = kptsCurr[kptMatches[i].trainIdx];
 
         for(uint32_t j=i+1; j<kptMatches.size(); j++){
-            auto& prevKptJ = kptsPrev[kptMatches[j].trainIdx];
-            auto& currKptJ = kptsCurr[kptMatches[j].queryIdx];
+            auto& prevKptJ = kptsPrev[kptMatches[j].queryIdx];
+            auto& currKptJ = kptsCurr[kptMatches[j].trainIdx];
 
             auto prevDistance = cv::norm(prevKptI.pt - prevKptJ.pt);
             auto currDistance = cv::norm(currKptI.pt - currKptJ.pt);
 
-            if(prevDistance >= std::numeric_limits<double>::epsilon() && currDistance >= distanceThreshold) {
+            if(prevDistance >= distanceThreshold && currDistance >= distanceThreshold) {
                 distanceRatios.push_back(currDistance / prevDistance);
             }
         }
@@ -185,36 +185,47 @@ double CamFusion::ComputeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
 
 // Find matched bounding boxes and fill in kptMatches in matched bounding boxes in current frame.
 // Similar to ClusterLidarWithROI, I also shrink ROI here.
-void CamFusion::MatchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches,
-                                   DataFrame &prevFrame, DataFrame &currFrame) {
+void CamFusion::MatchBoundingBoxes(const std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches,
+                                   const std::vector<BoundingBox>& prevBoxes,
+                                   const std::vector<BoundingBox>& currBoxes,
+                                   const std::vector<cv::KeyPoint>& prevKeypoints,
+                                   const std::vector<cv::KeyPoint>& currKeypoints) {
     // map<pair<prev frame box id, current frame box id>, DMatch number>
     std::map<std::pair<int, int>, uint32_t> boundingBoxMatchCounts;
 
     // count the match numbers for <prevBoxId, currBoxId> pairs.
+    int count = 0;
     for(auto& match : matches) {
-        auto& prevKeypoint = prevFrame.keypoints[match.trainIdx];
-        auto& currKeypoint = currFrame.keypoints[match.queryIdx];
-        for(auto& preBoundingBox : prevFrame.boundingBoxes){
+        // queryIdx corresponds to prevKeypoints (first keypoints argument),
+        // trainIdx corresponds to currKeypoints (second keypoints argument)!
+        // https://stackoverflow.com/questions/13318853/opencv-drawmatches-queryidx-and-trainidx
+        auto& prevKeypoint = prevKeypoints[match.queryIdx];
+        auto& currKeypoint = currKeypoints[match.trainIdx];
+        for(auto& preBoundingBox : prevBoxes){
             if (!preBoundingBox.roi.contains(prevKeypoint.pt)) {
                 continue;
             }
-            for(auto& currBoundingBox : currFrame.boundingBoxes) {
+            for(auto& currBoundingBox : currBoxes) {
                 // Use this loop because several bounding boxes may overlap, so they may contain the same keypoint.
                 // Use smaller ROI to focus on object.
                 if (currBoundingBox.roi.contains(currKeypoint.pt)){
                     // value of map is initialized to 0.
                     boundingBoxMatchCounts[std::make_pair(preBoundingBox.boxID,
                                                           currBoundingBox.boxID)]++;
+                    count++;
                 }
             }
         }
     }
+    std::cout << "count: " << count << "\n";
 
     // sort the <prevBoxId, currBoxId> by count number in descending order.
     std::vector<BoundingBoxMatchCount> boundingBoxMatchCountVector;
     for(auto& pair : boundingBoxMatchCounts){
         boundingBoxMatchCountVector.emplace_back(pair.first.first, pair.first.second, pair.second);
+//        std::cout << pair.first.first << ", " << pair.first.second << ", " << pair.second << "\n";
     }
+
     std::sort(boundingBoxMatchCountVector.begin(),
               boundingBoxMatchCountVector.end(),
               [](BoundingBoxMatchCount& a, BoundingBoxMatchCount& b){return a.count > b.count;});
@@ -226,17 +237,18 @@ void CamFusion::MatchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<in
            currBoxIdUsed.insert(element.currBoxId).second){
             // both box ids have not been matched.
             bbBestMatches[element.prevBoxId] = element.currBoxId;
+            std::cout << "match size: " << element.count << "\n";
         }
     }
 }
 
-void CamFusion::DisplayTTC(const cv::Mat &cameraImg, BoundingBox *currBB, double ttcLidar, double ttcCamera) {
+void CamFusion::DisplayTTC(const cv::Mat &cameraImg, BoundingBox& currBB, double ttcLidar, double ttcCamera) {
     cv::Mat visImg = cameraImg.clone();
-    DisplayLidarImgOverlay(visImg, currBB->lidarPoints, &visImg);
-    auto smallerROI = SmallerROI(currBB->roi);
-    cv::rectangle(visImg, cv::Point(smallerROI.x, smallerROI.y),
-                  cv::Point(smallerROI.x + smallerROI.width,
-                            smallerROI.y + smallerROI.height),
+    DisplayLidarImgOverlay(visImg, currBB.lidarPoints, &visImg);
+    auto roi = currBB.roi;
+    cv::rectangle(visImg, cv::Point(roi.x, roi.y),
+                  cv::Point(roi.x + roi.width,
+                            roi.y + roi.height),
                   cv::Scalar(0, 255, 0), 2);
 
     char str[200];
@@ -245,10 +257,7 @@ void CamFusion::DisplayTTC(const cv::Mat &cameraImg, BoundingBox *currBB, double
             2, cv::Scalar(0,0,255));
 
     std::string windowName = "Final Results : TTC";
-    cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
-    cv::imshow(windowName, visImg);
-    std::cout << "Press key to continue to next frame\n";
-    cv::waitKey(0);
+    DisplayWindow(windowName, visImg);
 }
 
 void CamFusion::DisplayLidarImgOverlay(cv::Mat &img, std::vector<LidarPoint> &lidarPoints, cv::Mat *extVisImg){
@@ -328,28 +337,33 @@ cv::Rect CamFusion::SmallerROI(const cv::Rect &roi) {
 }
 
 // I want to use RANSAC to remove outliers.
+// https://docs.opencv.org/master/d1/de0/tutorial_py_feature_homography.html
+// https://people.cs.umass.edu/~elm/Teaching/ppt/370/370_10_RANSAC.pptx.pdf
 void CamFusion::RemoveMatchOutliersRansac(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr,
                                           std::vector<cv::DMatch> &kptMatches) {
     std::cout << "match size (before): " << kptMatches.size() << "\n";
-    std::vector<double> dists;
-    double sumDistance = 0.0;
+
+    std::vector<cv::Point2f> ptsPrev, ptsCurr;
     for(auto& match : kptMatches){
-        auto distance = cv::norm(kptsPrev[match.trainIdx].pt - kptsCurr[match.queryIdx].pt);
-        dists.push_back(distance);
-        sumDistance += distance;
+        ptsPrev.push_back(kptsPrev[match.queryIdx].pt);
+        ptsCurr.push_back(kptsCurr[match.trainIdx].pt);
     }
 
-    auto meanDistance = sumDistance / kptMatches.size();
-    std::vector<cv::DMatch> kptMatchesOutliersRemoved;
-    auto maxDistance = 1.3 * meanDistance;
-    for(uint32_t i=0; i<kptMatches.size(); i++){
-        if (dists[i] <= maxDistance) {
-            kptMatchesOutliersRemoved.push_back(kptMatches[i]);
+    // use ransac to get match inliers recorded in mask.
+    cv::Mat mask;
+    auto homography = cv::findHomography(ptsPrev, ptsCurr, mask,cv::RANSAC, 3.0);
+
+    // Get match inliers
+    std::vector<cv::DMatch> kptMatchInliers;
+    for(size_t i=0; i<mask.rows; ++i){
+        auto inliner = mask.ptr<uchar>(i);
+        if(inliner[0] == 1){
+            kptMatchInliers.push_back(kptMatches[i]);
         }
     }
 
-    std::cout << "match size (after): " << kptMatchesOutliersRemoved.size() << "\n";
-    kptMatches = kptMatchesOutliersRemoved;
+    kptMatches = kptMatchInliers;
+    std::cout << "match size (after): " << kptMatchInliers.size() << "\n";
 }
 
 // kptsPrev is used to remove outliers.
@@ -358,11 +372,67 @@ void CamFusion::ClusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<c
     // associate matches to bounding box if its keypoint is within the ROI.
     // This means here the bounding box's matches may be more than those found in MatchBoundingBoxes.
     for(auto& match : kptMatches){
-        if(boundingBox.roi.contains(kptsCurr[match.queryIdx].pt)){
+        if(boundingBox.roi.contains(kptsCurr[match.trainIdx].pt)){
             boundingBox.kptMatches.push_back(match);
         }
     }
 
     // account for match outliers.
     RemoveMatchOutliersRansac(kptsPrev, kptsCurr, boundingBox.kptMatches);
+}
+
+void CamFusion::AddBoundingBoxesToImg(cv::Mat &img, std::vector<BoundingBox> &boundingBoxes) {
+    for(auto& boundingBox : boundingBoxes){
+        auto roi = boundingBox.roi;
+        cv::rectangle(img, roi, cv::Scalar(0, 255, 0), 2);
+        cv::putText(img, std::to_string(boundingBox.boxID),
+                    cv::Point(roi.x+roi.width/2, roi.y+roi.height/2),
+                    cv::FONT_HERSHEY_PLAIN,
+                    2, cv::Scalar(0, 0, 255), 2);
+    }
+}
+
+void CamFusion::DisplayWindow(const std::string &windowName, cv::Mat &visImg) {
+    cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
+    cv::imshow(windowName, visImg);
+    std::cout << "Press key to continue to next frame\n";
+    cv::waitKey(0);
+}
+
+void CamFusion::DisplayTwoImages(cv::Mat &imgPrev, cv::Mat &imgCurr) {
+    cv::Mat dst;
+    cv::hconcat(imgPrev, imgCurr, dst);
+    DisplayWindow("Two Images", dst);
+}
+
+void CamFusion::DisplayTwoFramesWithBoundingBoxMatch(DataFrame &prevFrame, DataFrame &currFrame) {
+    // Add bounding box to image
+    cv::Mat prevImage = prevFrame.cameraImg.clone();
+    cv::Mat currImage = currFrame.cameraImg.clone();
+    AddBoundingBoxesToImg(prevImage, prevFrame.boundingBoxes);
+    AddBoundingBoxesToImg(currImage, currFrame.boundingBoxes);
+
+    // concatenate two images
+    cv::Mat dstImage;
+    cv::hconcat(prevImage, currImage, dstImage);
+
+    // Add lines to bounding box matches. From detectObjects, boxId equals the box's index in box vector.
+    for(auto& bbMatch : currFrame.bbMatches){
+        assert(bbMatch.first < prevFrame.boundingBoxes.size());
+        assert(bbMatch.second < currFrame.boundingBoxes.size());
+        auto& boxPrev = prevFrame.boundingBoxes.at(bbMatch.first);
+        auto& boxCurr = currFrame.boundingBoxes.at(bbMatch.second);
+        auto point_left = cv::Point(boxPrev.roi.x+boxPrev.roi.width/2,
+                                    boxPrev.roi.y+boxPrev.roi.height/2);
+        auto point_right = cv::Point(boxCurr.roi.x+boxCurr.roi.width/2 + prevImage.cols,
+                                     boxCurr.roi.y+boxCurr.roi.height/2);
+        cv::arrowedLine(dstImage, point_left, point_right,
+                        cv::Scalar(0,0,255), 2);
+        cv::putText(dstImage, std::to_string(bbMatch.first), point_left,
+                    cv::FONT_HERSHEY_PLAIN, 2, cv::Scalar(0,255,0), 1);
+        cv::putText(dstImage, std::to_string(bbMatch.second), point_right,
+                    cv::FONT_HERSHEY_PLAIN, 2, cv::Scalar(0,255,0), 1);
+    }
+
+    DisplayWindow("Frames with matched box", dstImage);
 }

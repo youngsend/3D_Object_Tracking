@@ -57,7 +57,7 @@ void Matching2D::MatchDescriptors(std::vector<cv::KeyPoint> &kPtsSource, std::ve
         const float ratio_thresh = 0.8f;
         for (auto& kMatches : knn_matches) {
             if (kMatches.size() >= 2 && kMatches[0].distance < ratio_thresh * kMatches[1].distance) {
-                matches.emplace_back(kMatches[0]);
+                matches.push_back(kMatches[0]);
             }
         }
     }
