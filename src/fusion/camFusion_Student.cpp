@@ -187,14 +187,13 @@ double CamFusion::ComputeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
 // Similar to ClusterLidarWithROI, I also shrink ROI here.
 void CamFusion::MatchBoundingBoxes(const std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches,
                                    const std::vector<BoundingBox>& prevBoxes,
-                                   const std::vector<BoundingBox>& currBoxes,
+                                   std::vector<BoundingBox>& currBoxes,
                                    const std::vector<cv::KeyPoint>& prevKeypoints,
                                    const std::vector<cv::KeyPoint>& currKeypoints) {
     // map<pair<prev frame box id, current frame box id>, DMatch number>
-    std::map<std::pair<int, int>, uint32_t> boundingBoxMatchCounts;
+    std::map<std::pair<int, int>, std::vector<cv::DMatch>> boundingBoxMatchCounts;
 
     // count the match numbers for <prevBoxId, currBoxId> pairs.
-    int count = 0;
     for(auto& match : matches) {
         // queryIdx corresponds to prevKeypoints (first keypoints argument),
         // trainIdx corresponds to currKeypoints (second keypoints argument)!
@@ -211,18 +210,16 @@ void CamFusion::MatchBoundingBoxes(const std::vector<cv::DMatch> &matches, std::
                 if (currBoundingBox.roi.contains(currKeypoint.pt)){
                     // value of map is initialized to 0.
                     boundingBoxMatchCounts[std::make_pair(preBoundingBox.boxID,
-                                                          currBoundingBox.boxID)]++;
-                    count++;
+                                                          currBoundingBox.boxID)].push_back(match);
                 }
             }
         }
     }
-    std::cout << "count: " << count << "\n";
 
     // sort the <prevBoxId, currBoxId> by count number in descending order.
     std::vector<BoundingBoxMatchCount> boundingBoxMatchCountVector;
     for(auto& pair : boundingBoxMatchCounts){
-        boundingBoxMatchCountVector.emplace_back(pair.first.first, pair.first.second, pair.second);
+        boundingBoxMatchCountVector.emplace_back(pair.first.first, pair.first.second, pair.second.size());
 //        std::cout << pair.first.first << ", " << pair.first.second << ", " << pair.second << "\n";
     }
 
@@ -233,11 +230,18 @@ void CamFusion::MatchBoundingBoxes(const std::vector<cv::DMatch> &matches, std::
     // Take the box match with the largest count number. In bbBestMatches, box id should not duplicate.
     std::set<int> prevBoxIdUsed, currBoxIdUsed;
     for(auto& element : boundingBoxMatchCountVector){
+        // If there's only 1 match, I don't trust in this bounding box match.
+        if(element.count <= 1) {
+            continue;
+        }
+
         if(prevBoxIdUsed.insert(element.prevBoxId).second &&
            currBoxIdUsed.insert(element.currBoxId).second){
             // both box ids have not been matched.
             bbBestMatches[element.prevBoxId] = element.currBoxId;
-            std::cout << "match size: " << element.count << "\n";
+            currBoxes.at(element.currBoxId).kptMatches =
+                    boundingBoxMatchCounts[std::make_pair(element.prevBoxId, element.currBoxId)];
+//            std::cout << "match size: " << element.count << "\n";
         }
     }
 }
@@ -326,16 +330,6 @@ LidarPoint CamFusion::GetClosestLidarPoint(const std::vector<LidarPoint> &lidarP
     return lidarPoint;
 }
 
-cv::Rect CamFusion::SmallerROI(const cv::Rect &roi) {
-    // shrink current bounding box slightly to avoid having too many outlier points around the edges
-    cv::Rect smallerBox;
-    smallerBox.x = roi.x + shrinkFactor * roi.width / 2.0;
-    smallerBox.y = roi.y + shrinkFactor * roi.height / 2.0;
-    smallerBox.width = roi.width * (1 - shrinkFactor);
-    smallerBox.height = roi.height * (1 - shrinkFactor);
-    return smallerBox;
-}
-
 // I want to use RANSAC to remove outliers.
 // https://docs.opencv.org/master/d1/de0/tutorial_py_feature_homography.html
 // https://people.cs.umass.edu/~elm/Teaching/ppt/370/370_10_RANSAC.pptx.pdf
@@ -364,21 +358,6 @@ void CamFusion::RemoveMatchOutliersRansac(std::vector<cv::KeyPoint> &kptsPrev, s
 
     kptMatches = kptMatchInliers;
     std::cout << "match size (after): " << kptMatchInliers.size() << "\n";
-}
-
-// kptsPrev is used to remove outliers.
-void CamFusion::ClusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev,
-                                         std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches) {
-    // associate matches to bounding box if its keypoint is within the ROI.
-    // This means here the bounding box's matches may be more than those found in MatchBoundingBoxes.
-    for(auto& match : kptMatches){
-        if(boundingBox.roi.contains(kptsCurr[match.trainIdx].pt)){
-            boundingBox.kptMatches.push_back(match);
-        }
-    }
-
-    // account for match outliers.
-    RemoveMatchOutliersRansac(kptsPrev, kptsCurr, boundingBox.kptMatches);
 }
 
 void CamFusion::AddBoundingBoxesToImg(cv::Mat &img, std::vector<BoundingBox> &boundingBoxes) {
@@ -414,7 +393,8 @@ void CamFusion::DisplayTwoFramesWithBoundingBoxMatch(DataFrame &prevFrame, DataF
 
     // concatenate two images
     cv::Mat dstImage;
-    cv::hconcat(prevImage, currImage, dstImage);
+    // vertically concatenate two images because image is too wide...
+    cv::vconcat(prevImage, currImage, dstImage);
 
     // Add lines to bounding box matches. From detectObjects, boxId equals the box's index in box vector.
     for(auto& bbMatch : currFrame.bbMatches){
@@ -424,8 +404,8 @@ void CamFusion::DisplayTwoFramesWithBoundingBoxMatch(DataFrame &prevFrame, DataF
         auto& boxCurr = currFrame.boundingBoxes.at(bbMatch.second);
         auto point_left = cv::Point(boxPrev.roi.x+boxPrev.roi.width/2,
                                     boxPrev.roi.y+boxPrev.roi.height/2);
-        auto point_right = cv::Point(boxCurr.roi.x+boxCurr.roi.width/2 + prevImage.cols,
-                                     boxCurr.roi.y+boxCurr.roi.height/2);
+        auto point_right = cv::Point(boxCurr.roi.x+boxCurr.roi.width/2,
+                                     boxCurr.roi.y+boxCurr.roi.height/2+ prevImage.rows);
         cv::arrowedLine(dstImage, point_left, point_right,
                         cv::Scalar(0,0,255), 2);
         cv::putText(dstImage, std::to_string(bbMatch.first), point_left,

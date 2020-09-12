@@ -22,11 +22,9 @@ public:
     explicit CamFusion(cv::Mat P_rect_xx, cv::Mat R_rect_xx, cv::Mat RT, float shrinkFactor);
     // fusion
     void ClusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<LidarPoint> &lidarPoints);
-    void ClusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev,
-                                  std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches);
     void MatchBoundingBoxes(const std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches,
                             const std::vector<BoundingBox>& prevBoxes,
-                            const std::vector<BoundingBox>& currBoxes,
+                            std::vector<BoundingBox>& currBoxes,
                             const std::vector<cv::KeyPoint>& prevKeypoints,
                             const std::vector<cv::KeyPoint>& currKeypoints);
 
@@ -48,7 +46,6 @@ public:
     // helper
     LidarPoint GetClosestLidarPoint(const std::vector<LidarPoint>& lidarPoints,
                                     const std::vector<int>& cluster);
-    cv::Rect SmallerROI(const cv::Rect& roi);
     void RemoveMatchOutliersRansac(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr,
                                    std::vector<cv::DMatch>& kptMatches);
 

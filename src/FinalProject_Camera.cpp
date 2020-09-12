@@ -193,9 +193,9 @@ int main(int argc, const char *argv[]){
 
                     //// TASK FP.3 -> assign enclosed keypoint matches to bounding box
                     //// TASK FP.4 -> compute time-to-collision based on fusion
-                    camFusion.ClusterKptMatchesWithROI(currBB, dataBuffer[prev_index].keypoints,
-                                                       dataBuffer[curr_index].keypoints,
-                                                       dataBuffer[curr_index].kptMatches);
+                    camFusion.RemoveMatchOutliersRansac(dataBuffer[prev_index].keypoints,
+                                                        dataBuffer[curr_index].keypoints,
+                                                        currBB.kptMatches);
 
                     double ttcCamera = camFusion.ComputeTTCCamera(dataBuffer[prev_index].keypoints,
                                                                   dataBuffer[curr_index].keypoints,
