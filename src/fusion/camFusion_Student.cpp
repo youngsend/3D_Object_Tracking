@@ -129,7 +129,7 @@ void CamFusion::Display3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Si
 double CamFusion::ComputeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr,
                                    std::vector<cv::DMatch>& kptMatches, double frameRate, cv::Mat *visImg){
     // calculate all distance (in same frame) ratios for all matched keypoints.
-    double distanceThreshold = 50.0;
+    double distanceThreshold = 100.0;
     std::vector<float> distanceRatios;
     for(uint32_t i=0; i<kptMatches.size(); i++){
         auto& prevKptI = kptsPrev[kptMatches[i].queryIdx];

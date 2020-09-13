@@ -20,6 +20,7 @@ struct BoundingBoxMatchCount {
 class CamFusion {
 public:
     explicit CamFusion(cv::Mat P_rect_xx, cv::Mat R_rect_xx, cv::Mat RT, float shrinkFactor);
+
     // fusion
     void ClusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<LidarPoint> &lidarPoints);
     void MatchBoundingBoxes(const std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches,

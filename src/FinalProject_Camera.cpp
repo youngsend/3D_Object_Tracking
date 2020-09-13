@@ -1,64 +1,30 @@
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <iomanip>
-#include <vector>
-#include <cmath>
-#include <limits>
-#include <opencv2/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
-#include <opencv2/features2d.hpp>
-#include <opencv2/xfeatures2d.hpp>
-#include <opencv2/xfeatures2d/nonfree.hpp>
+#include "FinalProject_Camera.h"
 
-#include "dataStructures.h"
-#include "camera/matching2D.hpp"
-#include "camera/objectDetection2D.hpp"
-#include "lidar/lidarData.hpp"
-#include "fusion/camFusion.hpp"
-
-int main(int argc, const char *argv[]){
-    std::string detectorType = "SHITOMASI"; // SHITOMASI, HARRIS, FAST, BRISK, ORB, AKAZE, SIFT
-    std::string descriptorType = "ORB"; // BRIEF, ORB, FREAK, AKAZE, SIFT
-    std::string matcherType = "MAT_BF";        // MAT_BF, MAT_FLANN
-    std::string selectorType = "SEL_KNN";       // SEL_NN, SEL_KNN
-
-    // specify detector and descriptor types in command line
-    if (argc == 3) {
-        detectorType = argv[1];
-        descriptorType = argv[2];
-    }
-
-    Matching2D matching2D(detectorType, descriptorType, matcherType, selectorType);
-
+FinalProjectCamera::FinalProjectCamera() {
     // data location
-    std::string dataPath = "../";
+    dataPath = "../";
 
     // camera
-    std::string imgBasePath = dataPath + "images/";
-    std::string imgPrefix = "KITTI/2011_09_26/image_02/data/000000"; // left camera, color
-    std::string imgFileType = ".png";
-    int imgStartIndex = 0; // first file index to load (assumes Lidar and camera names have identical naming convention)
-    int imgEndIndex = 18;   // last file index to load
-    int imgStepWidth = 1;
-    int imgFillWidth = 4;  // no. of digits which make up the file index (e.g. img-0001.png)
+    imgBasePath = dataPath + "images/";
+    imgPrefix = "KITTI/2011_09_26/image_02/data/000000"; // left camera, color
+    imgFileType = ".png";
 
     // object detection
-    std::string yoloBasePath = dataPath + "dat/yolo/";
-    std::string yoloClassesFile = yoloBasePath + "coco.names";
-    std::string yoloModelConfiguration = yoloBasePath + "yolov3.cfg";
-    std::string yoloModelWeights = yoloBasePath + "yolov3.weights";
+    yoloBasePath = dataPath + "dat/yolo/";
+    yoloClassesFile = yoloBasePath + "coco.names";
+    yoloModelConfiguration = yoloBasePath + "yolov3.cfg";
+    yoloModelWeights = yoloBasePath + "yolov3.weights";
 
     // Lidar
-    std::string lidarPrefix = "KITTI/2011_09_26/velodyne_points/data/000000";
-    std::string lidarFileType = ".bin";
+    lidarPrefix = "KITTI/2011_09_26/velodyne_points/data/000000";
+    lidarFileType = ".bin";
 
     // calibration data for camera and lidar
-    cv::Mat P_rect_00(3,4,cv::DataType<double>::type); // 3x4 projection matrix after rectification
+    // 3x4 projection matrix after rectification
+    P_rect_00 = cv::Mat(3,4,cv::DataType<double>::type);
     // 3x3 rectifying rotation to make image planes co-planar
-    cv::Mat R_rect_00(4,4,cv::DataType<double>::type);
-    cv::Mat RT(4,4,cv::DataType<double>::type); // rotation matrix and translation vector
+    R_rect_00 = cv::Mat(4,4,cv::DataType<double>::type);
+    RT = cv::Mat(4,4,cv::DataType<double>::type); // rotation matrix and translation vector
 
     RT.at<double>(0,0) = 7.533745e-03; RT.at<double>(0,1) = -9.999714e-01;
     RT.at<double>(0,2) = -6.166020e-04; RT.at<double>(0,3) = -4.069766e-03;
@@ -85,11 +51,17 @@ int main(int argc, const char *argv[]){
     P_rect_00.at<double>(2,0) = 0.000000e+00; P_rect_00.at<double>(2,1) = 0.000000e+00;
     P_rect_00.at<double>(2,2) = 1.000000e+00; P_rect_00.at<double>(2,3) = 0.000000e+00;
 
-    float shrinkFactor = 0.10;
+    shrinkFactor = 0.10;
     // create CamFusion object using calibration data
-    CamFusion camFusion(P_rect_00, R_rect_00, RT, shrinkFactor);
+    camFusion = new CamFusion(P_rect_00, R_rect_00, RT, shrinkFactor);
+}
 
+void FinalProjectCamera::MainProcess(Matching2D& matching2D) {
     // misc
+    int imgStartIndex = 0; // first file index to load (assumes Lidar and camera names have identical naming convention)
+    int imgEndIndex = 18;   // last file index to load
+    int imgStepWidth = 1;
+    int imgFillWidth = 4;  // no. of digits which make up the file index (e.g. img-0001.png)
     double sensorFrameRate = 10.0 / imgStepWidth; // frames per second for Lidar and camera
     int dataBufferSize = 2;       // no. of images which are held in memory (ring buffer) at the same time
     std::vector<DataFrame> dataBuffer; // list of data frames which are held in memory at the same time
@@ -101,7 +73,7 @@ int main(int argc, const char *argv[]){
         imgNumber << std::setfill('0') << std::setw(imgFillWidth) << imgStartIndex + imgIndex;
         std::string imgFullFilename = imgBasePath + imgPrefix + imgNumber.str() + imgFileType;
 
-        // load image from file 
+        // load image from file
         cv::Mat img = cv::imread(imgFullFilename);
 
         // push image into data frame buffer
@@ -135,8 +107,8 @@ int main(int argc, const char *argv[]){
 
         // associate Lidar points with camera-based ROI
         // shrinks each bounding box by the given percentage to avoid 3D object merging at the edges of an ROI
-        camFusion.ClusterLidarWithROI(dataBuffer[curr_index].boundingBoxes,
-                                      dataBuffer[curr_index].lidarPoints);
+        camFusion->ClusterLidarWithROI(dataBuffer[curr_index].boundingBoxes,
+                                       dataBuffer[curr_index].lidarPoints);
 
         // Visualize 3D objects
 //        camFusion.Display3DObjects(dataBuffer[curr_index].boundingBoxes,
@@ -167,15 +139,15 @@ int main(int argc, const char *argv[]){
             std::cout << "matches size: " << dataBuffer[curr_index].kptMatches.size() << "\n";
 
             // associate bounding boxes between current and previous frame using keypoint matches
-            camFusion.MatchBoundingBoxes(dataBuffer[curr_index].kptMatches,
-                                         dataBuffer[curr_index].bbMatches,
-                                         dataBuffer[prev_index].boundingBoxes,
-                                         dataBuffer[curr_index].boundingBoxes,
-                                         dataBuffer[prev_index].keypoints,
-                                         dataBuffer[curr_index].keypoints);
+            camFusion->MatchBoundingBoxes(dataBuffer[curr_index].kptMatches,
+                                          dataBuffer[curr_index].bbMatches,
+                                          dataBuffer[prev_index].boundingBoxes,
+                                          dataBuffer[curr_index].boundingBoxes,
+                                          dataBuffer[prev_index].keypoints,
+                                          dataBuffer[curr_index].keypoints);
 
-            camFusion.DisplayTwoFramesWithBoundingBoxMatch(dataBuffer[prev_index],
-                                                           dataBuffer[curr_index]);
+            camFusion->DisplayTwoFramesWithBoundingBoxMatch(dataBuffer[prev_index],
+                                                            dataBuffer[curr_index]);
 
             // loop over all BB match pairs.
             for (auto& bbMatch : dataBuffer[curr_index].bbMatches){
@@ -188,24 +160,22 @@ int main(int argc, const char *argv[]){
                 // compute TTC for current match
                 if(!(currBB.lidarPoints.empty()) && !(prevBB.lidarPoints.empty())){
                     //// TASK FP.2 -> compute time-to-collision based on Lidar data
-                    double ttcLidar = camFusion.ComputeTTCLidar(prevBB.lidarPoints, currBB.lidarPoints,
-                                                                sensorFrameRate);
+                    double ttcLidar = camFusion->ComputeTTCLidar(prevBB.lidarPoints, currBB.lidarPoints,
+                                                                 sensorFrameRate);
 
                     //// TASK FP.3 -> assign enclosed keypoint matches to bounding box
                     //// TASK FP.4 -> compute time-to-collision based on fusion
-                    camFusion.RemoveMatchOutliersRansac(dataBuffer[prev_index].keypoints,
-                                                        dataBuffer[curr_index].keypoints,
-                                                        currBB.kptMatches);
+                    camFusion->RemoveMatchOutliersRansac(dataBuffer[prev_index].keypoints,
+                                                         dataBuffer[curr_index].keypoints,
+                                                         currBB.kptMatches);
 
-                    double ttcCamera = camFusion.ComputeTTCCamera(dataBuffer[prev_index].keypoints,
-                                                                  dataBuffer[curr_index].keypoints,
-                                                                  currBB.kptMatches, sensorFrameRate);
+                    double ttcCamera = camFusion->ComputeTTCCamera(dataBuffer[prev_index].keypoints,
+                                                                   dataBuffer[curr_index].keypoints,
+                                                                   currBB.kptMatches, sensorFrameRate);
 
-                    camFusion.DisplayTTC(dataBuffer[curr_index].cameraImg, currBB, ttcLidar, ttcCamera);
+                    camFusion->DisplayTTC(dataBuffer[curr_index].cameraImg, currBB, ttcLidar, ttcCamera);
                 } // eof TTC computation
-            } // eof loop over all BB matches            
+            } // eof loop over all BB matches
         }
     } // eof loop over all images
-
-    return 0;
 }
