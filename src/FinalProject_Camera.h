@@ -34,7 +34,7 @@ public:
     FinalProjectCamera();
     ~FinalProjectCamera() = default;
     // return <ttcLidar, ttcCamera> vector
-    TTCPairVector MainProcess(std::unique_ptr<Matching2D> matching2D);
+    TTCPairVector MainProcess(std::unique_ptr<Matching2D> matching2D, bool visTTC = true);
 
 private:
     // data location

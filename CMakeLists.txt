@@ -22,3 +22,12 @@ add_executable (3D_object_tracking
         src/camera/matching2D_Student.cpp
         src/camera/objectDetection2D.cpp)
 target_link_libraries (3D_object_tracking ${OpenCV_LIBRARIES})
+
+add_executable (Output_3D_object_tracking
+        src/main_csv.cpp
+        src/fusion/camFusion_Student.cpp
+        src/FinalProject_Camera.cpp
+        src/lidar/lidarData.cpp
+        src/camera/matching2D_Student.cpp
+        src/camera/objectDetection2D.cpp)
+target_link_libraries (Output_3D_object_tracking ${OpenCV_LIBRARIES})

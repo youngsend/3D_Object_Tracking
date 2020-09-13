@@ -57,7 +57,7 @@ FinalProjectCamera::FinalProjectCamera() {
             new CamFusion(P_rect_00, R_rect_00, RT, shrinkFactor));
 }
 
-TTCPairVector FinalProjectCamera::MainProcess(std::unique_ptr<Matching2D> matching2D) {
+TTCPairVector FinalProjectCamera::MainProcess(std::unique_ptr<Matching2D> matching2D, bool visTTC) {
     TTCPairVector ttcPairVector;
 
     // misc
@@ -126,17 +126,17 @@ TTCPairVector FinalProjectCamera::MainProcess(std::unique_ptr<Matching2D> matchi
         matching2D->DetectKeypoints(dataBuffer[curr_index].keypoints, imgGray);
 
         matching2D->DescKeypoints(dataBuffer[curr_index].keypoints,
-                                 dataBuffer[curr_index].cameraImg, dataBuffer[curr_index].descriptors);
+                                  dataBuffer[curr_index].cameraImg, dataBuffer[curr_index].descriptors);
 
         // wait until at least two images have been processed
         if (dataBuffer.size() > 1){
             uint prev_index = (imgIndex - 1) % dataBufferSize;
 
             matching2D->MatchDescriptors(dataBuffer[prev_index].keypoints,
-                                        dataBuffer[curr_index].keypoints,
-                                        dataBuffer[prev_index].descriptors,
-                                        dataBuffer[curr_index].descriptors,
-                                        dataBuffer[curr_index].kptMatches);
+                                         dataBuffer[curr_index].keypoints,
+                                         dataBuffer[prev_index].descriptors,
+                                         dataBuffer[curr_index].descriptors,
+                                         dataBuffer[curr_index].kptMatches);
 
             std::cout << "matches size: " << dataBuffer[curr_index].kptMatches.size() << "\n";
 
@@ -178,7 +178,9 @@ TTCPairVector FinalProjectCamera::MainProcess(std::unique_ptr<Matching2D> matchi
                     // save ttc pair
                     ttcPairVector.emplace_back(ttcLidar, ttcCamera);
 
-                    camFusion->DisplayTTC(dataBuffer[curr_index].cameraImg, currBB, ttcLidar, ttcCamera);
+                    if (visTTC) {
+                        camFusion->DisplayTTC(dataBuffer[curr_index].cameraImg, currBB, ttcLidar, ttcCamera);
+                    }
                 } // eof TTC computation
             } // eof loop over all BB matches
         }
