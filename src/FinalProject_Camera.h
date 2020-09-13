@@ -27,11 +27,14 @@
 #include "lidar/lidarData.hpp"
 #include "fusion/camFusion.hpp"
 
+using TTCPairVector = std::vector<std::pair<double, double>>;
+
 class FinalProjectCamera {
 public:
     FinalProjectCamera();
     ~FinalProjectCamera() = default;
-    void MainProcess(Matching2D& matching2D);
+    // return <ttcLidar, ttcCamera> vector
+    TTCPairVector MainProcess(std::unique_ptr<Matching2D> matching2D);
 
 private:
     // data location
@@ -59,5 +62,5 @@ private:
     cv::Mat RT; // rotation matrix and translation vector
 
     float shrinkFactor;
-    CamFusion* camFusion;
+    std::unique_ptr<CamFusion> camFusion;
 };

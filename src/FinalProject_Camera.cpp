@@ -53,10 +53,13 @@ FinalProjectCamera::FinalProjectCamera() {
 
     shrinkFactor = 0.10;
     // create CamFusion object using calibration data
-    camFusion = new CamFusion(P_rect_00, R_rect_00, RT, shrinkFactor);
+    camFusion = std::unique_ptr<CamFusion>(
+            new CamFusion(P_rect_00, R_rect_00, RT, shrinkFactor));
 }
 
-void FinalProjectCamera::MainProcess(Matching2D& matching2D) {
+TTCPairVector FinalProjectCamera::MainProcess(std::unique_ptr<Matching2D> matching2D) {
+    TTCPairVector ttcPairVector;
+
     // misc
     int imgStartIndex = 0; // first file index to load (assumes Lidar and camera names have identical naming convention)
     int imgEndIndex = 18;   // last file index to load
@@ -120,17 +123,16 @@ void FinalProjectCamera::MainProcess(Matching2D& matching2D) {
         cv::cvtColor(dataBuffer[curr_index].cameraImg, imgGray, cv::COLOR_BGR2GRAY);
 
         // extract 2D keypoints from current image
-        matching2D.DetectKeypoints(dataBuffer[curr_index].keypoints, imgGray);
+        matching2D->DetectKeypoints(dataBuffer[curr_index].keypoints, imgGray);
 
-        matching2D.DescKeypoints(dataBuffer[curr_index].keypoints,
+        matching2D->DescKeypoints(dataBuffer[curr_index].keypoints,
                                  dataBuffer[curr_index].cameraImg, dataBuffer[curr_index].descriptors);
 
         // wait until at least two images have been processed
         if (dataBuffer.size() > 1){
             uint prev_index = (imgIndex - 1) % dataBufferSize;
-//            std::cout << "last index: " << prev_index << ", current index: " << curr_index << "\n";
 
-            matching2D.MatchDescriptors(dataBuffer[prev_index].keypoints,
+            matching2D->MatchDescriptors(dataBuffer[prev_index].keypoints,
                                         dataBuffer[curr_index].keypoints,
                                         dataBuffer[prev_index].descriptors,
                                         dataBuffer[curr_index].descriptors,
@@ -146,8 +148,8 @@ void FinalProjectCamera::MainProcess(Matching2D& matching2D) {
                                           dataBuffer[prev_index].keypoints,
                                           dataBuffer[curr_index].keypoints);
 
-            camFusion->DisplayTwoFramesWithBoundingBoxMatch(dataBuffer[prev_index],
-                                                            dataBuffer[curr_index]);
+//            camFusion->DisplayTwoFramesWithBoundingBoxMatch(dataBuffer[prev_index],
+//                                                            dataBuffer[curr_index]);
 
             // loop over all BB match pairs.
             for (auto& bbMatch : dataBuffer[curr_index].bbMatches){
@@ -173,9 +175,13 @@ void FinalProjectCamera::MainProcess(Matching2D& matching2D) {
                                                                    dataBuffer[curr_index].keypoints,
                                                                    currBB.kptMatches, sensorFrameRate);
 
+                    // save ttc pair
+                    ttcPairVector.emplace_back(ttcLidar, ttcCamera);
+
                     camFusion->DisplayTTC(dataBuffer[curr_index].cameraImg, currBB, ttcLidar, ttcCamera);
                 } // eof TTC computation
             } // eof loop over all BB matches
         }
     } // eof loop over all images
+    return ttcPairVector;
 }

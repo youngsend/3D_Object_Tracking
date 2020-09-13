@@ -17,8 +17,8 @@ int main(int argc, const char *argv[]){
     }
 
     FinalProjectCamera finalProjectCamera;
-    Matching2D matching2D(detectorType, descriptorType, matcherType, selectorType);
-    finalProjectCamera.MainProcess(matching2D);
+    finalProjectCamera.MainProcess(std::unique_ptr<Matching2D>(
+            new Matching2D(detectorType, descriptorType, matcherType, selectorType)));
 
     return 0;
 }
